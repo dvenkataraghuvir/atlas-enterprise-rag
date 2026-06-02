@@ -1,16 +1,18 @@
 import tempfile, os
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.services.ingest import ingest_file, ensure_collection_exists
+from app.services.ingest import ingest_file, ensure_collection_exists, SUPPORTED_EXTENSIONS
 
 router = APIRouter()
 
 
 @router.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
-    allowed = {".txt", ".pdf", ".md"}
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in allowed:
-        raise HTTPException(400, f"Unsupported file type: {ext}. Allowed: {allowed}")
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            400,
+            f"Unsupported file type '{ext}'. Supported: {sorted(SUPPORTED_EXTENSIONS)}"
+        )
 
     ensure_collection_exists()
 

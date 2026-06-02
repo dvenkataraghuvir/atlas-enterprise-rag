@@ -4,7 +4,8 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     groq_api_key: str
-    qdrant_url: str = "http://qdrant:6333"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
     qdrant_collection: str = "documents"
     environment: str = "development"
     cors_origins: list[str] = ["*"]

@@ -141,11 +141,11 @@ const RECENT = [
 ];
 
 // QA data is now fetched live from the backend (POST /api/chat)
-const API_BASE = ‘http://localhost:8000’;
+const API_BASE = 'http://localhost:8000';
 const SUGGESTIONS = [
-  { t:"What’s our policy on customer data retention?", s:’policy · legal · privacy’ },
-  { t:"How do we handle on-call escalation after hours?", s:’sre · incidents’ },
-  { t:"What is the SLA for enterprise support tickets?", s:’support · sla’ },
+  { t:"What's our policy on customer data retention?", s:'policy · legal · privacy' },
+  { t:"How do we handle on-call escalation after hours?", s:'sre · incidents' },
+  { t:"What is the SLA for enterprise support tickets?", s:'support · sla' },
 ];
 
 const PIPE = [
@@ -153,7 +153,7 @@ const PIPE = [
   { t:'Hybrid retrieval', d:'BM25 + dense · k=18' },
   { t:'Rerank', d:'cross-encoder · keep 3' },
   { t:'Generate', d:'vLLM · cited' },
-  { t:'Groundedness check', d:'guardrail' },
+  { t:'Source Verification', d:'every claim traced' },
 ];
 
 /* ---------------- helpers ---------------- */
@@ -294,7 +294,7 @@ function Product() {
           {!currentQuery && (
             <div className="empty fade-in">
               <h2>Ask Atlas anything about how we work.</h2>
-              <p>Grounded in your connected knowledge. Every answer is cited and groundedness-checked before you see it.</p>
+              <p>Source-verified answers from your connected knowledge. Every claim is traced to a real document before you see it.</p>
               <div className="suggest">
                 {SUGGESTIONS.map((s,i)=>(
                   <button key={i} onClick={()=>ask(s.t)}>{s.t}<span>{s.s}</span></button>
@@ -331,7 +331,7 @@ function Product() {
                     <button className="ico-btn" title="Helpful">👍</button>
                     <button className="ico-btn" title="Not helpful">👎</button>
                     <button className="ico-btn" title="Copy" onClick={()=>navigator.clipboard.writeText(answerText)}>⧉</button>
-                    {meta && <span style={{marginLeft:8, fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-4)'}}>grounded {Math.round((meta.ground||0)*100)}%</span>}
+                    {meta && <span style={{marginLeft:8, fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-4)'}}>source-verified {Math.round((meta.ground||0)*100)}%</span>}
                   </div>
                 )}
               </div>
@@ -355,7 +355,7 @@ function Product() {
         </div>
         <div className="insp-sub">How this answer was built — the part interviewers actually want to see.</div>
 
-        {!currentQuery && <div style={{color:'var(--ink-4)', fontSize:12.5, marginTop:30, textAlign:'center', lineHeight:1.5}}>Ask a question to see the live retrieval &amp; grounding trace.</div>}
+        {!currentQuery && <div style={{color:'var(--ink-4)', fontSize:12.5, marginTop:30, textAlign:'center', lineHeight:1.5}}>Ask a question to see the live retrieval &amp; source verification trace.</div>}
 
         {currentQuery && (
           <>
@@ -373,11 +373,11 @@ function Product() {
 
             {!streaming && meta && (
               <div className="fade-in">
-                {/* groundedness */}
+                {/* source verification */}
                 <div className="ground">
-                  <div className="gt"><span>Groundedness</span><span>{Math.round((meta.ground||0)*100)}%</span></div>
+                  <div className="gt"><span>Source Verified</span><span>{Math.round((meta.ground||0)*100)}%</span></div>
                   <div className="bar"><i style={{width:((meta.ground||0)*100)+'%'}}></i></div>
-                  <div className="gn">Every claim traced to a retrieved passage. Below 80% Atlas refuses and asks to narrow the question.</div>
+                  <div className="gn">Every claim is traced to a real document. Below 75% Atlas tells you it cannot find a reliable answer rather than guess.</div>
                 </div>
 
                 {/* sources */}
@@ -425,7 +425,7 @@ function Architecture() {
     <div className="arch-wrap arch-canvas">
       <div className="arch-inner">
         <div className="arch-title">Atlas — system architecture</div>
-        <p className="arch-desc">Two paths: an offline <strong>ingestion</strong> pipeline that keeps the index fresh, and an online <strong>query</strong> path that retrieves, grounds and cites. Everything emits traces to the Lens platform.</p>
+        <p className="arch-desc">Two paths: an offline <strong>ingestion</strong> pipeline that keeps the index fresh, and an online <strong>query</strong> path that retrieves, source-verifies and cites. Everything emits traces to the Lens platform.</p>
 
         <div className="lane">
           <div className="lane-label">Ingestion · offline / scheduled</div>
@@ -449,7 +449,7 @@ function Architecture() {
             <ArrowRight/>
             <Node title="⑦ Generation" sub="Streaming answer constrained to cite retrieved passages only." tags={['vLLM','Llama / Mistral','structured cites']} />
             <ArrowRight/>
-            <Node title="⑧ Guardrails" sub="Groundedness + PII + ACL leak check before the user sees a token." tags={['NeMo Guardrails','refuse < 0.8']} cls="accent" />
+            <Node title="⑧ Guardrails" sub="Source-Verified + PII + ACL check before the user sees a token." tags={['NeMo Guardrails','refuse < 0.8']} cls="accent" />
           </div>
         </div>
 
@@ -469,7 +469,7 @@ function Architecture() {
         <div className="legend">
           <div><span className="dot" style={{background:'var(--accent)'}}></span> Core RAG path</div>
           <div><span className="dot" style={{background:'var(--border-2)', border:'1px dashed var(--ink-4)'}}></span> Platform / shared with Lens</div>
-          <div style={{marginLeft:'auto', fontFamily:'var(--mono)', fontSize:11, color:'var(--ink-4)'}}>talk-track: framing → retrieval quality → grounding → eval loop</div>
+          <div style={{marginLeft:'auto', fontFamily:'var(--mono)', fontSize:11, color:'var(--ink-4)'}}>talk-track: framing → retrieval quality → source-verification → eval loop</div>
         </div>
       </div>
     </div>
