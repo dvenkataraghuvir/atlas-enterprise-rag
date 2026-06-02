@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from langchain_community.document_loaders import (
     TextLoader,
     PyMuPDFLoader,
@@ -17,13 +17,54 @@ from app.services.embeddings import get_embeddings
 from app.core.config import get_settings
 
 SUPPORTED_EXTENSIONS = {
-    ".txt", ".md", ".rst", ".log",   # plain text
-    ".pdf",                           # PDF
-    ".docx", ".doc",                  # Word
-    ".pptx", ".ppt",                  # PowerPoint
-    ".xlsx", ".xls",                  # Excel
-    ".html", ".htm",                  # HTML
-    ".csv",                           # CSV
+    ".txt", ".md", ".rst", ".log",          # plain text
+    ".pdf",                                  # PDF
+    ".docx", ".doc",                         # Word
+    ".pptx", ".ppt",                         # PowerPoint
+    ".xlsx", ".xls",                         # Excel
+    ".html", ".htm",                         # HTML
+    ".csv",                                  # CSV
+    # Code files
+    ".py",                                   # Python
+    ".js", ".jsx", ".ts", ".tsx",            # JavaScript / TypeScript
+    ".java",                                 # Java
+    ".go",                                   # Go
+    ".rs",                                   # Rust
+    ".cpp", ".cc", ".c", ".h",              # C / C++
+    ".rb",                                   # Ruby
+    ".swift",                                # Swift
+    ".kt",                                   # Kotlin
+    ".cs",                                   # C#
+    ".php",                                  # PHP
+    ".scala",                                # Scala
+    ".sol",                                  # Solidity
+    ".sh", ".bash",                          # Shell scripts
+}
+
+# Maps file extension → LangChain Language enum for code-aware splitting
+_CODE_LANGUAGE_MAP: dict[str, Language] = {
+    ".py":    Language.PYTHON,
+    ".js":    Language.JS,
+    ".jsx":   Language.JS,
+    ".ts":    Language.TS,
+    ".tsx":   Language.TS,
+    ".java":  Language.JAVA,
+    ".go":    Language.GO,
+    ".rs":    Language.RUST,
+    ".cpp":   Language.CPP,
+    ".cc":    Language.CPP,
+    ".c":     Language.C,
+    ".h":     Language.C,
+    ".rb":    Language.RUBY,
+    ".swift": Language.SWIFT,
+    ".kt":    Language.KOTLIN,
+    ".cs":    Language.CSHARP,
+    ".php":   Language.PHP,
+    ".scala": Language.SCALA,
+    ".sol":   Language.SOL,
+    ".rst":   Language.RST,
+    ".html":  Language.HTML,
+    ".htm":   Language.HTML,
 }
 
 
@@ -41,8 +82,27 @@ def _get_loader(path: Path):
         return BSHTMLLoader(str(path), open_encoding="utf-8")
     if ext == ".csv":
         return CSVLoader(str(path))
-    # Default: treat as plain text (.txt, .md, .rst, .log, etc.)
+    # Code files and plain text all load as text
     return TextLoader(str(path), encoding="utf-8")
+
+
+def _get_splitter(path: Path) -> RecursiveCharacterTextSplitter:
+    """Return a language-aware splitter for code, plain splitter for everything else."""
+    ext = path.suffix.lower()
+    lang = _CODE_LANGUAGE_MAP.get(ext)
+    if lang:
+        # Splits on function/class boundaries — preserves code structure
+        return RecursiveCharacterTextSplitter.from_language(
+            language=lang,
+            chunk_size=1000,
+            chunk_overlap=100,
+        )
+    # Documents: split by paragraphs → sentences → words
+    return RecursiveCharacterTextSplitter(
+        chunk_size=512,
+        chunk_overlap=64,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
 
 
 def _get_qdrant_client() -> QdrantClient:
@@ -72,7 +132,7 @@ def collection_is_empty() -> bool:
 
 
 def ingest_file(file_path: str) -> dict:
-    """Ingest any supported file type into Qdrant."""
+    """Ingest any supported file into Qdrant with language-aware chunking for code."""
     settings = get_settings()
     path = Path(file_path)
 
@@ -80,12 +140,9 @@ def ingest_file(file_path: str) -> dict:
     docs = loader.load()
     for doc in docs:
         doc.metadata["source"] = path.name
+        doc.metadata["file_type"] = path.suffix.lower()
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512,
-        chunk_overlap=64,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
+    splitter = _get_splitter(path)
     chunks = splitter.split_documents(docs)
 
     embeddings = get_embeddings()
@@ -96,7 +153,7 @@ def ingest_file(file_path: str) -> dict:
         api_key=settings.qdrant_api_key,
         collection_name=settings.qdrant_collection,
     )
-    return {"file": path.name, "chunks_ingested": len(chunks)}
+    return {"file": path.name, "chunks_ingested": len(chunks), "type": path.suffix.lower()}
 
 
 def ingest_sample_docs():
