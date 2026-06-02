@@ -1,0 +1,231 @@
+/* =========================================================================
+   Shared Design System  —  "Studio" clean/minimal/pastel
+   Used by index + all 3 project prototypes
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ---- Neutrals (warm near-white) ---- */
+  --bg:        #FBFBF9;
+  --surface:   #FFFFFF;
+  --surface-2: #F5F5F1;
+  --surface-3: #EFEFEA;
+  --border:    #E8E8E1;
+  --border-2:  #DCDCD3;
+
+  --ink:   #1B1B18;
+  --ink-2: #5C5C55;
+  --ink-3: #8E8E85;
+  --ink-4: #B6B6AC;
+
+  /* ---- Pastel accents (shared chroma/lightness, varied hue) ---- */
+  /* solids (for text/icons/strokes) */
+  --blue:    oklch(0.55 0.12 256);
+  --violet:  oklch(0.55 0.12 305);
+  --mint:    oklch(0.55 0.11 168);
+  --amber:   oklch(0.58 0.11 70);
+  --rose:    oklch(0.57 0.14 22);
+
+  /* tints (pastel fills) */
+  --blue-t:    oklch(0.96 0.028 256);
+  --violet-t:  oklch(0.96 0.028 305);
+  --mint-t:    oklch(0.96 0.03 168);
+  --amber-t:   oklch(0.96 0.04 70);
+  --rose-t:    oklch(0.96 0.032 22);
+
+  --blue-t2:   oklch(0.92 0.05 256);
+  --violet-t2: oklch(0.92 0.05 305);
+  --mint-t2:   oklch(0.92 0.05 168);
+
+  /* per-project signature accent (overridden per page) */
+  --accent:    var(--blue);
+  --accent-t:  var(--blue-t);
+  --accent-t2: var(--blue-t2);
+
+  /* ---- Radius ---- */
+  --r-sm: 7px;
+  --r:    11px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  /* ---- Shadows (very subtle) ---- */
+  --sh-sm: 0 1px 2px rgba(20,20,15,0.04);
+  --sh:    0 1px 3px rgba(20,20,15,0.05), 0 1px 2px rgba(20,20,15,0.03);
+  --sh-md: 0 4px 16px rgba(20,20,15,0.06), 0 1px 3px rgba(20,20,15,0.04);
+  --sh-lg: 0 12px 40px rgba(20,20,15,0.10), 0 2px 8px rgba(20,20,15,0.05);
+
+  /* ---- Type ---- */
+  --sans: 'Hanken Grotesk', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, p { margin: 0; }
+
+.mono { font-family: var(--mono); }
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* ---- Buttons ---- */
+.btn {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 9px 15px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--ink-3); background: var(--surface-2); }
+.btn-primary {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.btn-primary:hover { background: #000; border-color:#000; }
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
+.btn-ghost:hover { background: var(--surface-2); border-color: transparent; }
+
+/* ---- Chips / tags / pills ---- */
+.chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.chip.accent { background: var(--accent-t); color: var(--accent); border-color: transparent; }
+.chip.blue   { background: var(--blue-t);   color: var(--blue);   border-color: transparent; }
+.chip.violet { background: var(--violet-t); color: var(--violet); border-color: transparent; }
+.chip.mint   { background: var(--mint-t);   color: var(--mint);   border-color: transparent; }
+.chip.amber  { background: var(--amber-t);  color: var(--amber);  border-color: transparent; }
+.chip.rose   { background: var(--rose-t);   color: var(--rose);   border-color: transparent; }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+/* ---- Cards ---- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh);
+}
+
+/* ---- Scrollbars ---- */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 99px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- Generic app shell used by prototypes ---- */
+.proto-root { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 20;
+}
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 15px;
+  flex: none;
+}
+.brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.brand-sub  { color: var(--ink-3); font-size: 12.5px; font-weight: 500; }
+
+/* segmented view switch (Product / Architecture) */
+.seg {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 3px;
+  gap: 2px;
+}
+.seg button {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.seg button.active { background: var(--surface); color: var(--ink); box-shadow: var(--sh-sm); }
+
+/* ---- Architecture diagram primitives ---- */
+.arch-canvas {
+  flex: 1;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+  background-size: 22px 22px;
+  background-color: var(--bg);
+}
+.node {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  box-shadow: var(--sh);
+  padding: 13px 15px;
+}
+.node .node-title { font-weight: 700; font-size: 13.5px; display:flex; align-items:center; gap:8px; }
+.node .node-sub { color: var(--ink-3); font-size: 11.5px; margin-top: 3px; line-height: 1.45; }
+.node-tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--ink-3); margin-top: 9px; display:flex; flex-wrap:wrap; gap:5px;
+}
+.node-tag span { background: var(--surface-2); border:1px solid var(--border); padding: 2px 6px; border-radius: 5px; }
+
+.fade-in { animation: fadeIn .4s ease both; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
