@@ -1,0 +1,44 @@
+DATA RETENTION AND PRIVACY POLICY — v4.2
+Document Owner: Legal & Compliance
+Last Updated: Q1 2024
+
+1. RETENTION PERIODS
+
+Customer data is retained for 24 months after the last recorded account activity. After this period, data is automatically purged from primary stores within 30 days of the retention window expiry.
+
+Backup snapshots follow a separate 90-day rolling window and are encrypted at rest using AES-256. Backup purges are logged and auditable.
+
+Financial transaction records are retained for 7 years in compliance with SOX requirements, regardless of account status.
+
+Server and application logs are retained for 13 months to support security incident investigation.
+
+2. ENTERPRISE DATA RESIDENCY
+
+Enterprise customers on the Data Residency add-on may request:
+- A shorter retention floor (minimum 6 months)
+- Region-pinned storage to an approved geographic zone
+- Custom deletion schedules reviewed quarterly by the compliance team
+
+Residency overrides are configured per-tenant and require written approval from the customer's Data Protection Officer.
+
+3. DELETION REQUESTS
+
+Deletion requests under GDPR Article 17 and CCPA are honored within 30 days of receipt.
+
+Each erasure request opens a tracked workflow in the Privacy Console with:
+- Approver sign-off required
+- Tamper-evident audit log entry
+- Written confirmation sent to requester within 5 business days
+
+Emergency deletion requests (e.g. data breach scenarios) are processed within 72 hours.
+
+4. DATA CLASSIFICATION
+
+All customer data is classified as:
+- Tier 1 (PII): Encrypted in transit and at rest, access-logged, 2-person rule for bulk exports
+- Tier 2 (Operational): Encrypted in transit, role-based access
+- Tier 3 (Public): No encryption requirement
+
+5. THIRD-PARTY DATA PROCESSORS
+
+All sub-processors handling customer data must sign a Data Processing Agreement (DPA) and comply with equivalent retention standards. The current sub-processor list is maintained at trust.ourcompany.com.

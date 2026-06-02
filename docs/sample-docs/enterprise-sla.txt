@@ -1,0 +1,76 @@
+ENTERPRISE SUPPORT SERVICE LEVEL AGREEMENT (SLA)
+Document Owner: Customer Success
+Last Updated: Q1 2024
+Applies to: Enterprise and Enterprise+ subscription tiers
+
+1. SUPPORT TIERS
+
+Enterprise customers receive:
+- 24/7 email and chat support
+- Dedicated Customer Success Manager (CSM) for accounts >$50k ARR
+- Access to the private enterprise support portal
+- Quarterly business reviews
+
+Enterprise+ customers additionally receive:
+- Phone support during business hours (9am–6pm customer timezone)
+- Escalation path to senior engineering on critical issues
+- Custom SLA addendums available
+
+2. RESPONSE TIME COMMITMENTS
+
+Severity 1 (Production outage, data loss):
+- First response: within 1 hour, 24/7
+- Status update cadence: every 2 hours until resolved
+- Target resolution: 4 hours
+
+Severity 2 (Significant feature degradation):
+- First response: within 4 hours, 24/7
+- Status update cadence: every 8 hours
+- Target resolution: 24 hours
+
+Severity 3 (Minor bug, workaround available):
+- First response: within 1 business day
+- Target resolution: 5 business days
+
+Severity 4 (Feature request, question):
+- First response: within 2 business days
+- No resolution SLA; handled through product roadmap process
+
+3. UPTIME GUARANTEE
+
+Enterprise SLA: 99.9% monthly uptime (excluding scheduled maintenance)
+Enterprise+: 99.95% monthly uptime
+
+Downtime is calculated as total minutes of unavailability in a calendar month divided by total minutes in the month.
+
+Scheduled maintenance windows: Sundays 2am–6am UTC. Customers are notified 5 business days in advance via email and status page.
+
+4. SLA CREDITS
+
+If uptime falls below the committed threshold, customers are eligible for service credits:
+
+99.5%–99.9%: 10% credit of monthly fee
+99.0%–99.5%: 25% credit of monthly fee
+Below 99.0%: 50% credit of monthly fee
+
+Credits are applied to the next invoice. Credits do not carry over beyond 90 days and are not redeemable for cash.
+
+To request a credit, submit a ticket tagged "SLA Credit Request" within 30 days of the affected period.
+
+5. EXCLUSIONS
+
+SLA commitments do not apply to:
+- Scheduled maintenance windows
+- Incidents caused by customer configuration or misuse
+- Force majeure events
+- Beta or preview features (clearly labeled as such)
+
+6. DATA REGIONS
+
+Enterprise customers may select from the following data residency regions:
+- US East (default)
+- US West
+- EU West (Frankfurt)
+- Asia Pacific (Singapore)
+
+Region selection is configured at account creation. Region migrations require a support ticket and 30 days notice.

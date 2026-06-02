@@ -123,6 +123,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
 <script type="text/babel">
+// @ts-nocheck
 const { useState, useEffect, useRef } = React;
 
 /* ---------------- data ---------------- */
@@ -139,38 +140,12 @@ const RECENT = [
   'Which regions is data residency enforced in?',
 ];
 
-const QA = {
-  retention: {
-    q: 'What’s our policy on customer data retention?',
-    answer: [
-      'Customer data is retained for **24 months** after the last account activity, after which it is automatically purged from primary stores within 30 days [1]. Backups follow a separate **90-day rolling window** and are encrypted at rest [1].',
-      'Enterprise customers on the **Data Residency add-on** can request a shorter retention window (as low as 6 months) or region-pinned storage; these overrides are configured per-tenant and audited quarterly [2][3].',
-      'Deletion requests under GDPR/CCPA are honored within **30 days** and are tracked as a formal workflow in the Privacy Console [3].'
-    ],
-    sources: [
-      { id:1, ic:'P', col:'oklch(0.5 0.02 60)', title:'Data Retention Policy v4.2', space:'Policy PDFs · Legal', snippet:'…records are retained for twenty-four (24) months following the last recorded account activity. Backup snapshots are kept on a rolling 90-day window and encrypted at rest using AES-256…', dense:0.89, bm25:0.71, rerank:0.97 },
-      { id:2, ic:'C', col:'oklch(0.55 0.12 256)', title:'Data Residency Add-on — Config', space:'Confluence · Platform', snippet:'…tenants with the residency add-on may set a custom retention floor (minimum 6 months) and pin storage to an approved region. Overrides are reviewed in the quarterly audit…', dense:0.82, bm25:0.44, rerank:0.91 },
-      { id:3, ic:'C', col:'oklch(0.55 0.12 256)', title:'Privacy Console — DSAR Runbook', space:'Confluence · Privacy', snippet:'…erasure requests are completed within 30 days. Each request opens a tracked workflow with approver sign-off and a tamper-evident audit log entry…', dense:0.78, bm25:0.52, rerank:0.86 },
-    ],
-    ground: 0.96, latency:'2.4s', tokens:'1,920 ctx', retrieved: 18, kept: 3,
-  },
-  oncall: {
-    q: 'How do we handle on-call escalation after hours?',
-    answer: [
-      'After-hours incidents page the **primary on-call** via PagerDuty; if unacknowledged for **8 minutes**, they escalate to the secondary, then to the **EM** at 15 minutes [1].',
-      'A Sev-1 (customer-facing outage) automatically opens a war-room channel and notifies the **Incident Commander** rotation in parallel — it does not wait for the standard ladder [1][2].',
-      'All escalations are logged; the post-incident review is due within **3 business days** [2].'
-    ],
-    sources: [
-      { id:1, ic:'C', col:'oklch(0.55 0.12 256)', title:'On-Call & Escalation Policy', space:'Confluence · SRE', snippet:'…primary is paged immediately. Unacknowledged after 8 minutes → secondary; after 15 minutes → engineering manager. Sev-1 bypasses the ladder and pages the IC rotation…', dense:0.91, bm25:0.68, rerank:0.98 },
-      { id:2, ic:'J', col:'oklch(0.6 0.13 256)', title:'INC process — Sev definitions', space:'Jira · Incidents', snippet:'…Sev-1 denotes a customer-facing outage and triggers an automatic war-room. A blameless post-incident review is required within three business days…', dense:0.84, bm25:0.59, rerank:0.9 },
-    ],
-    ground: 0.94, latency:'2.1s', tokens:'1,640 ctx', retrieved: 14, kept: 2,
-  },
-};
+// QA data is now fetched live from the backend (POST /api/chat)
+const API_BASE = ‘http://localhost:8000’;
 const SUGGESTIONS = [
-  { key:'retention', t:'What’s our policy on customer data retention?', s:'policy · legal · privacy' },
-  { key:'oncall',    t:'How do we handle on-call escalation after hours?', s:'sre · incidents' },
+  { t:"What’s our policy on customer data retention?", s:’policy · legal · privacy’ },
+  { t:"How do we handle on-call escalation after hours?", s:’sre · incidents’ },
+  { t:"What is the SLA for enterprise support tickets?", s:’support · sla’ },
 ];
 
 const PIPE = [
@@ -200,51 +175,94 @@ function Citations({ text, onHot }) {
 
 /* ---------------- product view ---------------- */
 function Product() {
-  const [active, setActive] = useState(null);     // qa key
-  const [streamed, setStreamed] = useState(0);     // chars revealed
-  const [streaming, setStreaming] = useState(false);
-  const [hot, setHot] = useState(null);
-  const [input, setInput] = useState('');
-  const [stepDone, setStepDone] = useState(0);
+  const [currentQuery, setCurrentQuery] = useState('');   // active question text
+  const [answerText,   setAnswerText]   = useState('');   // streamed answer so far
+  const [sources,      setSources]      = useState([]);
+  const [meta,         setMeta]         = useState(null); // {ground, latency, retrieved, kept}
+  const [streaming,    setStreaming]     = useState(false);
+  const [pipeSteps,    setPipeSteps]    = useState([]);   // steps received from server
+  const [errorMsg,     setErrorMsg]     = useState('');
+  const [hot,          setHot]          = useState(null);
+  const [input,        setInput]        = useState('');
   const scrollRef = useRef(null);
+  const abortRef  = useRef(null);
 
-  const qa = active ? QA[active] : null;
-  const fullText = qa ? qa.answer.join('\n\n') : '';
+  const shown = !streaming && currentQuery;
 
-  function ask(key) {
-    if (!QA[key]) return;
-    setActive(key); setStreamed(0); setStreaming(true); setHot(null); setStepDone(0); setInput('');
-  }
-  function submitFree(e){
-    e.preventDefault();
-    const v = input.trim().toLowerCase();
-    if (v.includes('reten') || v.includes('data')) ask('retention');
-    else if (v.includes('call') || v.includes('escal')) ask('oncall');
-    else if (input.trim()) ask('retention');
-  }
+  async function ask(query) {
+    if (!query.trim()) return;
+    // cancel any in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
 
-  // pipeline step animation then stream
-  useEffect(() => {
-    if (!streaming) return;
-    if (stepDone < PIPE.length) {
-      const t = setTimeout(()=>setStepDone(s=>s+1), 230);
-      return ()=>clearTimeout(t);
+    setCurrentQuery(query);
+    setAnswerText('');
+    setSources([]);
+    setMeta(null);
+    setPipeSteps([]);
+    setErrorMsg('');
+    setStreaming(true);
+    setHot(null);
+    setInput('');
+
+    try {
+      const res = await fetch(API_BASE + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal: abortRef.current.signal,
+      });
+
+      if (!res.ok) { setErrorMsg('Backend error: ' + res.status); setStreaming(false); return; }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let evt;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (evt.type === 'pipeline_step') {
+            setPipeSteps(ps => [...ps, { t: evt.name, d: evt.detail }]);
+          } else if (evt.type === 'token') {
+            setAnswerText(a => a + evt.text);
+          } else if (evt.type === 'done') {
+            setSources(evt.sources || []);
+            setMeta({ ground: evt.ground, latency: evt.latency, retrieved: evt.retrieved, kept: evt.kept });
+            setStreaming(false);
+          } else if (evt.type === 'error') {
+            setErrorMsg(evt.message);
+            setStreaming(false);
+          }
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setErrorMsg('Could not reach the backend. Make sure docker-compose is running on port 8000.');
+      }
+      setStreaming(false);
     }
-  }, [streaming, stepDone]);
+  }
+
+  function submitFree(e) {
+    e.preventDefault();
+    if (input.trim()) ask(input.trim());
+  }
 
   useEffect(() => {
-    if (!streaming || stepDone < PIPE.length) return;
-    if (streamed < fullText.length) {
-      const t = setTimeout(()=>setStreamed(s=>Math.min(s+4, fullText.length)), 12);
-      return ()=>clearTimeout(t);
-    } else { setStreaming(false); }
-  }, [streaming, streamed, fullText, stepDone]);
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [answerText, currentQuery]);
 
-  useEffect(()=>{ if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [streamed, active]);
-
-  const shown = streamed >= fullText.length;
-  const visibleText = fullText.slice(0, streamed);
-  const visibleParas = visibleText.split('\n\n');
+  const visibleParas = answerText.split('\n\n').filter(Boolean);
+  const generatingNow = streaming && pipeSteps.length > 0 && answerText === '';
 
   return (
     <div className="app">
@@ -260,53 +278,60 @@ function Product() {
         ))}
         <div className="rail-h">Recent</div>
         {RECENT.map((r,i)=>(
-          <div className="recent" key={i} onClick={()=>{ if(r.includes('escal')) ask('oncall'); }}>{r}</div>
+          <div className="recent" key={i} onClick={()=>ask(r)}>{r}</div>
         ))}
         <div style={{marginTop:18, padding:'12px', background:'var(--surface-2)', borderRadius:'var(--r)'}}>
-          <div style={{fontSize:11, fontWeight:700, color:'var(--ink-2)'}}>Index freshness</div>
-          <div style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)', marginTop:4}}>synced 6 min ago · 34,843 docs</div>
+          <div style={{fontSize:11, fontWeight:700, color:'var(--ink-2)'}}>Index</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)', marginTop:4}}>
+            {sources.length > 0 ? sources.length + ' sources retrieved' : 'sample docs loaded'}
+          </div>
         </div>
       </div>
 
       {/* CENTER */}
       <div className="conv pane" style={{overflow:'hidden'}}>
         <div className="conv-scroll" ref={scrollRef}>
-          {!active && (
+          {!currentQuery && (
             <div className="empty fade-in">
               <h2>Ask Atlas anything about how we work.</h2>
               <p>Grounded in your connected knowledge. Every answer is cited and groundedness-checked before you see it.</p>
               <div className="suggest">
-                {SUGGESTIONS.map(s=>(
-                  <button key={s.key} onClick={()=>ask(s.key)}>{s.t}<span>{s.s}</span></button>
+                {SUGGESTIONS.map((s,i)=>(
+                  <button key={i} onClick={()=>ask(s.t)}>{s.t}<span>{s.s}</span></button>
                 ))}
               </div>
             </div>
           )}
-          {active && (
+          {currentQuery && (
             <>
-              <div className="msg user"><div className="bubble">{qa.q}</div></div>
+              <div className="msg user"><div className="bubble">{currentQuery}</div></div>
               <div className="msg fade-in">
                 <div className="answer-head">
                   <div className="brand-mark">A</div>
                   <div className="nm">Atlas</div>
                   <div className="status">
                     {streaming
-                      ? <><span className="dot" style={{background:'var(--accent)'}}></span> {stepDone<PIPE.length? 'retrieving…':'generating…'}</>
-                      : <>{qa.kept} sources · {qa.latency}</>}
+                      ? <><span className="dot" style={{background:'var(--accent)'}}></span>{generatingNow ? ' retrieving…' : ' generating…'}</>
+                      : meta ? <>{meta.kept} sources · {meta.latency}</> : ''}
                   </div>
                 </div>
+                {errorMsg && (
+                  <div style={{color:'var(--rose)', fontSize:13, padding:'10px', background:'var(--rose-t)', borderRadius:'var(--r)', marginBottom:8}}>
+                    {errorMsg}
+                  </div>
+                )}
                 <div className="answer-body">
                   {visibleParas.map((p,i)=>(
                     <p key={i}><Citations text={p} onHot={setHot} /></p>
                   ))}
-                  {streaming && stepDone>=PIPE.length && <span style={{opacity:.4}}>▍</span>}
+                  {streaming && <span style={{opacity:.4}}>▍</span>}
                 </div>
-                {shown && (
+                {shown && !errorMsg && (
                   <div className="answer-actions fade-in">
                     <button className="ico-btn" title="Helpful">👍</button>
                     <button className="ico-btn" title="Not helpful">👎</button>
-                    <button className="ico-btn" title="Copy">⧉</button>
-                    <span style={{marginLeft:8, fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-4)'}}>{qa.tokens} · grounded {Math.round(qa.ground*100)}%</span>
+                    <button className="ico-btn" title="Copy" onClick={()=>navigator.clipboard.writeText(answerText)}>⧉</button>
+                    {meta && <span style={{marginLeft:8, fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-4)'}}>grounded {Math.round((meta.ground||0)*100)}%</span>}
                   </div>
                 )}
               </div>
@@ -324,54 +349,52 @@ function Product() {
 
       {/* RIGHT inspector */}
       <div className="insp pane">
-        <div className="insp-h"><div className="t">Retrieval</div>
-          {qa && <span className="chip accent">{streaming&&stepDone<PIPE.length? 'live':'trace'}</span>}
+        <div className="insp-h">
+          <div className="t">Retrieval</div>
+          {currentQuery && <span className="chip accent">{streaming ? 'live' : 'trace'}</span>}
         </div>
         <div className="insp-sub">How this answer was built — the part interviewers actually want to see.</div>
 
-        {!qa && <div style={{color:'var(--ink-4)', fontSize:12.5, marginTop:30, textAlign:'center', lineHeight:1.5}}>Ask a question to see the live retrieval &amp; grounding trace.</div>}
+        {!currentQuery && <div style={{color:'var(--ink-4)', fontSize:12.5, marginTop:30, textAlign:'center', lineHeight:1.5}}>Ask a question to see the live retrieval &amp; grounding trace.</div>}
 
-        {qa && (
+        {currentQuery && (
           <>
-            {/* pipeline */}
+            {/* pipeline steps */}
             <div style={{marginBottom:18}}>
-              {PIPE.map((p,i)=>(
+              {(streaming ? pipeSteps : (pipeSteps.length ? pipeSteps : PIPE)).map((p,i)=>(
                 <div className="pipe-step" key={i}>
-                  <div className={'pipe-dot'+(i<stepDone||!streaming?' done':'')}>
-                    {(i<stepDone||!streaming) && <span style={{color:'#fff', fontSize:10}}>✓</span>}
+                  <div className={'pipe-dot' + (!streaming ? ' done' : i < pipeSteps.length ? ' done' : '')}>
+                    {(!streaming || i < pipeSteps.length) && <span style={{color:'#fff', fontSize:10}}>✓</span>}
                   </div>
                   <div><div className="pt">{p.t}</div><div className="pd">{p.d}</div></div>
                 </div>
               ))}
             </div>
 
-            {(!streaming || stepDone>=PIPE.length) && (
+            {!streaming && meta && (
               <div className="fade-in">
                 {/* groundedness */}
                 <div className="ground">
-                  <div className="gt"><span>Groundedness</span><span>{Math.round(qa.ground*100)}%</span></div>
-                  <div className="bar"><i style={{width:(qa.ground*100)+'%'}}></i></div>
+                  <div className="gt"><span>Groundedness</span><span>{Math.round((meta.ground||0)*100)}%</span></div>
+                  <div className="bar"><i style={{width:((meta.ground||0)*100)+'%'}}></i></div>
                   <div className="gn">Every claim traced to a retrieved passage. Below 80% Atlas refuses and asks to narrow the question.</div>
                 </div>
 
-                {/* retrieved chunks */}
+                {/* sources */}
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', margin:'2px 0 10px'}}>
                   <div style={{fontWeight:700, fontSize:12.5}}>Sources used</div>
-                  <span style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)'}}>{qa.retrieved} retrieved → {qa.kept} kept</span>
+                  <span style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)'}}>{meta.retrieved} retrieved → {meta.kept} kept</span>
                 </div>
-                {qa.sources.map(s=>(
+                {sources.map(s=>(
                   <div className={'chunk'+(hot===s.id?' hot':'')} key={s.id}
                        onMouseEnter={()=>setHot(s.id)} onMouseLeave={()=>setHot(null)}>
                     <div className="chunk-h">
                       <div className="n">{s.id}</div>
                       <div><div className="ti">{s.title}</div></div>
-                      <div className="sc">rerank<br/><b style={{color:'var(--accent)'}}>{s.rerank}</b></div>
                     </div>
                     <div className="chunk-x">{s.snippet}</div>
                     <div className="chunk-meta">
                       <span className="chip">{s.space}</span>
-                      <span className="chip">dense {s.dense}</span>
-                      <span className="chip">bm25 {s.bm25}</span>
                     </div>
                   </div>
                 ))}

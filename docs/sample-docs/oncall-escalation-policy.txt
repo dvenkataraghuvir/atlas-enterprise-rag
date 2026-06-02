@@ -1,0 +1,55 @@
+ON-CALL AND INCIDENT ESCALATION POLICY
+Document Owner: Site Reliability Engineering
+Last Updated: Q4 2023
+
+1. ON-CALL ROTATION
+
+All engineers on the SRE and Platform teams participate in a weekly on-call rotation managed in PagerDuty. Each rotation consists of a primary and a secondary on-call engineer.
+
+On-call schedules are published two weeks in advance. Schedule swaps require 48 hours notice and must be recorded in PagerDuty.
+
+2. ESCALATION LADDER
+
+When an incident page fires:
+
+Step 1 — Primary on-call is paged immediately via PagerDuty (phone + app notification).
+Step 2 — If unacknowledged for 8 minutes, the secondary on-call is paged.
+Step 3 — If still unacknowledged after 15 minutes total, the Engineering Manager on the incident rotation is paged.
+Step 4 — If unacknowledged after 20 minutes, the VP of Engineering is notified.
+
+3. SEVERITY LEVELS
+
+Sev-1: Customer-facing outage or data loss. Bypasses the standard escalation ladder. Automatically pages the Incident Commander (IC) rotation in parallel and opens a dedicated war-room Slack channel.
+
+Sev-2: Significant service degradation affecting >10% of customers. Follows the standard ladder. Requires a status page update within 30 minutes.
+
+Sev-3: Isolated bug or performance issue with limited customer impact. Normal business hours response. No on-call page required unless it escalates.
+
+4. INCIDENT COMMANDER RESPONSIBILITIES
+
+The Incident Commander (IC) is responsible for:
+- Declaring the severity level
+- Coordinating response across teams
+- Updating the status page every 30 minutes during active Sev-1 incidents
+- Calling the all-clear when the incident is resolved
+
+IC rotation is separate from the on-call engineering rotation. A list of current ICs is maintained in the #incidents Slack channel.
+
+5. POST-INCIDENT REVIEW
+
+A blameless post-incident review (PIR) is required for all Sev-1 and Sev-2 incidents.
+
+PIR due date: within 3 business days of incident resolution.
+
+The PIR must include:
+- Timeline of events
+- Root cause analysis
+- Action items with owners and due dates
+
+PIR documents are stored in the Confluence space "Engineering / Incidents".
+
+6. AFTER-HOURS CONTACTS
+
+On-call phone bridge: +1-800-XXX-XXXX (internal only)
+PagerDuty escalation policy: "production-escalation-v2"
+War-room channel naming convention: #inc-YYYYMMDD-slug
