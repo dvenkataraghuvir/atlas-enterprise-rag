@@ -168,12 +168,12 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
             full_answer += token
             yield sse({"type": "token", "text": token})
 
-        # ── Step 6: groundedness check ───────────────────────────────────
+        # ── Step 6: groundedness check (uses 8b-instant to save 70B quota) ─
         yield sse({"type": "pipeline_step", "name": "Groundedness check",
                    "detail": "faithfulness score"})
 
         ground_llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             api_key=settings.groq_api_key,
             temperature=0,
         )
