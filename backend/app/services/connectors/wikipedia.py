@@ -1,8 +1,14 @@
+import wikipedia as wiki_pkg
 from langchain_community.document_loaders import WikipediaLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_qdrant import QdrantVectorStore
 from app.services.embeddings import get_embeddings
 from app.core.config import get_settings
+
+# Wikipedia API requires a User-Agent header — without it returns empty responses
+wiki_pkg.set_user_agent(
+    "Atlas-RAG/1.0 (github.com/dvenkataraghuvir/atlas-enterprise-rag)"
+)
 
 
 async def ingest_wikipedia(query: str, max_articles: int = 2) -> dict:
