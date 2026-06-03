@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
     qdrant_collection: str = "documents"
+    google_api_key: str | None = None
     environment: str = "development"
     cors_origins: list[str] = ["*"]
 
