@@ -165,10 +165,10 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
 
         # ── Step 5: LLM generation (streamed) ───────────────────────────
         yield sse({"type": "pipeline_step", "name": "Generating answer",
-                   "detail": "Groq · Llama 3.3 70B"})
+                   "detail": "Groq · Llama 4 Scout"})
 
         llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             api_key=settings.groq_api_key,
             streaming=True,
             temperature=0.1,
@@ -188,6 +188,14 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
             ground_llm = ChatGoogleGenerativeAI(
                 model="gemini-2.5-flash",
                 google_api_key=settings.google_api_key,
+                temperature=0,
+            )
+        elif settings.nvidia_api_key:
+            from langchain_openai import ChatOpenAI
+            ground_llm = ChatOpenAI(
+                model="meta/llama-3.1-8b-instruct",
+                api_key=settings.nvidia_api_key,
+                base_url="https://integrate.api.nvidia.com/v1",
                 temperature=0,
             )
         else:

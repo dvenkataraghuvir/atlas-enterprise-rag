@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     qdrant_api_key: str | None = None
     qdrant_collection: str = "documents"
     google_api_key: str | None = None
+    nvidia_api_key: str | None = None
     environment: str = "development"
     cors_origins: list[str] = ["*"]
 
