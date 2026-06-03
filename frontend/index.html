@@ -158,10 +158,22 @@ const PIPE = [
 
 /* ---------------- Wikipedia connector component ---------------- */
 function WikipediaConnector() {
-  const [wikiQuery, setWikiQuery] = useState('');
-  const [wikiState, setWikiState] = useState('idle'); // idle | loading | done | error
+  const [wikiQuery, setWikiQuery]   = useState('');
+  const [wikiState, setWikiState]   = useState('idle');
   const [wikiResult, setWikiResult] = useState(null);
-  const [ingested, setIngested] = useState([]);
+  const [ingested, setIngested]     = useState([]);   // loaded from Qdrant on mount
+  const [expanded, setExpanded]     = useState(false);
+
+  // Load already-ingested Wikipedia topics from Qdrant on mount
+  useEffect(() => {
+    fetch(API_BASE + '/api/connectors/sources')
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        const wikiTitles = data.wikipedia || [];
+        setIngested(wikiTitles);
+      })
+      .catch(() => {});
+  }, []);
 
   async function connectWikipedia(e) {
     e.preventDefault();
@@ -178,7 +190,10 @@ function WikipediaConnector() {
       if (!res.ok) throw new Error(data.detail || 'Failed');
       setWikiResult(data);
       setWikiState('done');
-      setIngested(prev => [...prev, ...data.titles]);
+      setIngested(prev => {
+        const next = [...new Set([...prev, ...data.titles])];
+        return next;
+      });
       setWikiQuery('');
     } catch (err) {
       setWikiResult({ error: err.message });
@@ -186,20 +201,33 @@ function WikipediaConnector() {
     }
   }
 
+  const SHOW_LIMIT = 4;
+  const visibleTopics = expanded ? ingested : ingested.slice(0, SHOW_LIMIT);
+
   return (
     <div style={{margin:'10px 0'}}>
       <div className="rail-h" style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
         <span>Wikipedia</span>
-        <span style={{fontSize:9, fontFamily:'var(--mono)', color:'var(--mint)'}}>live</span>
+        <span style={{fontSize:9, fontFamily:'var(--mono)', color:'var(--mint)'}}>
+          {ingested.length > 0 ? ingested.length + ' topics' : 'live'}
+        </span>
       </div>
 
-      {/* Ingested topics list */}
-      {ingested.map((t,i) => (
+      {/* Ingested topics — scrollable, capped at SHOW_LIMIT with expand */}
+      {visibleTopics.map((t,i) => (
         <div className="src" key={i} style={{cursor:'default'}}>
           <div className="ic" style={{background:'oklch(0.5 0.08 200)', fontSize:9, fontWeight:700}}>W</div>
-          <div className="nm" style={{fontSize:12}}>{t}</div>
+          <div className="nm" style={{fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{t}</div>
         </div>
       ))}
+      {ingested.length > SHOW_LIMIT && (
+        <div onClick={() => setExpanded(e => !e)} style={{
+          fontSize:10.5, color:'var(--accent)', cursor:'pointer',
+          padding:'2px 8px', fontFamily:'var(--mono)'
+        }}>
+          {expanded ? '▲ show less' : `+${ingested.length - SHOW_LIMIT} more`}
+        </div>
+      )}
 
       {/* Search form */}
       <form onSubmit={connectWikipedia} style={{marginTop:8}}>
@@ -237,7 +265,7 @@ function WikipediaConnector() {
       )}
       {wikiState === 'done' && wikiResult && (
         <div style={{fontSize:10.5, color:'var(--mint)', marginTop:5, fontFamily:'var(--mono)'}}>
-          +{wikiResult.chunks_ingested} chunks ingested
+          ✓ {wikiResult.chunks_ingested} chunks added
         </div>
       )}
       {wikiState === 'error' && wikiResult && (
