@@ -156,6 +156,99 @@ const PIPE = [
   { t:'Source Verification', d:'every claim traced' },
 ];
 
+/* ---------------- Wikipedia connector component ---------------- */
+function WikipediaConnector() {
+  const [wikiQuery, setWikiQuery] = useState('');
+  const [wikiState, setWikiState] = useState('idle'); // idle | loading | done | error
+  const [wikiResult, setWikiResult] = useState(null);
+  const [ingested, setIngested] = useState([]);
+
+  async function connectWikipedia(e) {
+    e.preventDefault();
+    if (!wikiQuery.trim()) return;
+    setWikiState('loading');
+    setWikiResult(null);
+    try {
+      const res = await fetch(API_BASE + '/api/connectors/wikipedia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: wikiQuery.trim(), max_articles: 2 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed');
+      setWikiResult(data);
+      setWikiState('done');
+      setIngested(prev => [...prev, ...data.titles]);
+      setWikiQuery('');
+    } catch (err) {
+      setWikiResult({ error: err.message });
+      setWikiState('error');
+    }
+  }
+
+  return (
+    <div style={{margin:'10px 0'}}>
+      <div className="rail-h" style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+        <span>Wikipedia</span>
+        <span style={{fontSize:9, fontFamily:'var(--mono)', color:'var(--mint)'}}>live</span>
+      </div>
+
+      {/* Ingested topics list */}
+      {ingested.map((t,i) => (
+        <div className="src" key={i} style={{cursor:'default'}}>
+          <div className="ic" style={{background:'oklch(0.5 0.08 200)', fontSize:9, fontWeight:700}}>W</div>
+          <div className="nm" style={{fontSize:12}}>{t}</div>
+        </div>
+      ))}
+
+      {/* Search form */}
+      <form onSubmit={connectWikipedia} style={{marginTop:8}}>
+        <div style={{
+          display:'flex', gap:5, background:'var(--surface-2)',
+          border:'1px solid var(--border)', borderRadius:'var(--r-sm)',
+          padding:'4px 6px', alignItems:'center'
+        }}>
+          <span style={{fontSize:11, color:'var(--ink-4)'}}>W</span>
+          <input
+            value={wikiQuery}
+            onChange={e => setWikiQuery(e.target.value)}
+            placeholder="Add topic..."
+            style={{
+              flex:1, border:'none', outline:'none', background:'transparent',
+              fontSize:12, color:'var(--ink)', fontFamily:'var(--sans)'
+            }}
+            disabled={wikiState === 'loading'}
+          />
+          <button type="submit" disabled={wikiState === 'loading' || !wikiQuery.trim()} style={{
+            border:'none', background: wikiQuery.trim() ? 'var(--accent)' : 'var(--surface-3)',
+            color: wikiQuery.trim() ? '#fff' : 'var(--ink-4)',
+            borderRadius:5, padding:'2px 8px', fontSize:11, cursor:'pointer', fontWeight:700
+          }}>
+            {wikiState === 'loading' ? '...' : '+'}
+          </button>
+        </div>
+      </form>
+
+      {/* Status messages */}
+      {wikiState === 'loading' && (
+        <div style={{fontSize:10.5, color:'var(--ink-3)', marginTop:5, fontFamily:'var(--mono)'}}>
+          Fetching from Wikipedia...
+        </div>
+      )}
+      {wikiState === 'done' && wikiResult && (
+        <div style={{fontSize:10.5, color:'var(--mint)', marginTop:5, fontFamily:'var(--mono)'}}>
+          +{wikiResult.chunks_ingested} chunks ingested
+        </div>
+      )}
+      {wikiState === 'error' && wikiResult && (
+        <div style={{fontSize:10.5, color:'var(--rose)', marginTop:5}}>
+          {wikiResult.error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- helpers ---------------- */
 function Citations({ text, onHot }) {
   // split text on [n] markers, render bold + citation pills
@@ -276,6 +369,10 @@ function Product() {
             <div className="ct">{s.ct}</div>
           </div>
         ))}
+
+        {/* Wikipedia connector */}
+        <WikipediaConnector />
+
         <div className="rail-h">Recent</div>
         {RECENT.map((r,i)=>(
           <div className="recent" key={i} onClick={()=>ask(r)}>{r}</div>

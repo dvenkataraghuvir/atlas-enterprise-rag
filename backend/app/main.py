@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat, ingest as ingest_router
+from app.api import chat, ingest as ingest_router, connectors
 from app.services.ingest import ensure_collection_exists, collection_is_empty, ingest_sample_docs
 
 
@@ -34,6 +34,7 @@ app.add_middleware(
 
 app.include_router(chat.router,           prefix="/api", tags=["chat"])
 app.include_router(ingest_router.router,  prefix="/api", tags=["ingest"])
+app.include_router(connectors.router,     prefix="/api", tags=["connectors"])
 
 
 @app.get("/health")
