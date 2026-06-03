@@ -128,7 +128,12 @@ async def _fetch_wikipedia_live(query: str) -> str:
 
     def _sync_fetch() -> str:
         try:
-            page = wiki_pkg.page(query, auto_suggest=True)
+            # Search first to get the best matching article title,
+            # then fetch that page — handles natural language queries correctly
+            results = wiki_pkg.search(query, results=3)
+            if not results:
+                return ""
+            page = wiki_pkg.page(results[0], auto_suggest=False)
             return f"[Wikipedia: {page.title}]\n{page.content[:15000]}"
         except wiki_pkg.DisambiguationError as e:
             try:
