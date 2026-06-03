@@ -111,14 +111,33 @@ def _get_qdrant_client() -> QdrantClient:
 
 
 def ensure_collection_exists():
+    """Create collection with the correct vector size for the active embedding model.
+    Recreates the collection if the stored dimension doesn't match the current model."""
     settings = get_settings()
     client = _get_qdrant_client()
-    existing = [c.name for c in client.get_collections().collections]
-    if settings.qdrant_collection not in existing:
-        client.create_collection(
-            collection_name=settings.qdrant_collection,
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE),
-        )
+
+    # Detect actual vector size from the active embedding model
+    embeddings = get_embeddings()
+    vector_size = len(embeddings.embed_query("test"))
+
+    existing = {c.name: c for c in client.get_collections().collections}
+
+    if settings.qdrant_collection in existing:
+        # Check if existing collection has the right dimensions
+        info = client.get_collection(settings.qdrant_collection)
+        stored_size = info.config.params.vectors.size
+        if stored_size != vector_size:
+            # Dimension mismatch — delete and recreate with correct size
+            print(f"Dimension mismatch ({stored_size} → {vector_size}). Recreating collection.")
+            client.delete_collection(settings.qdrant_collection)
+        else:
+            return  # Already correct
+
+    client.create_collection(
+        collection_name=settings.qdrant_collection,
+        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+    )
+    print(f"Created collection '{settings.qdrant_collection}' with {vector_size} dimensions.")
 
 
 def collection_is_empty() -> bool:
