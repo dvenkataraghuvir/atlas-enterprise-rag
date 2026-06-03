@@ -181,13 +181,21 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
 
         # ── Step 6: source verification ──────────────────────────────────
         yield sse({"type": "pipeline_step", "name": "Source Verification",
-                   "detail": "llama-3.1-8b-instant judge"})
+                   "detail": "Gemini 2.5 Flash judge"})
 
-        ground_llm = ChatGroq(
-            model="llama-3.1-8b-instant",
-            api_key=settings.groq_api_key,
-            temperature=0,
-        )
+        if settings.google_api_key:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            ground_llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=settings.google_api_key,
+                temperature=0,
+            )
+        else:
+            ground_llm = ChatGroq(
+                model="llama-3.1-8b-instant",
+                api_key=settings.groq_api_key,
+                temperature=0,
+            )
         ground_chain = GROUND_PROMPT | ground_llm | StrOutputParser()
         try:
             score_str = await ground_chain.ainvoke({
