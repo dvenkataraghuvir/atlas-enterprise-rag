@@ -157,21 +157,17 @@ const PIPE = [
 ];
 
 /* ---------------- Wikipedia connector component ---------------- */
-function WikipediaConnector() {
+function WikipediaConnector({ wikiLive, setWikiLive }) {
   const [wikiQuery, setWikiQuery]   = useState('');
   const [wikiState, setWikiState]   = useState('idle');
   const [wikiResult, setWikiResult] = useState(null);
-  const [ingested, setIngested]     = useState([]);   // loaded from Qdrant on mount
+  const [ingested, setIngested]     = useState([]);
   const [expanded, setExpanded]     = useState(false);
 
-  // Load already-ingested Wikipedia topics from Qdrant on mount
   useEffect(() => {
     fetch(API_BASE + '/api/connectors/sources')
       .then(r => r.ok ? r.json() : {})
-      .then(data => {
-        const wikiTitles = data.wikipedia || [];
-        setIngested(wikiTitles);
-      })
+      .then(data => setIngested(data.wikipedia || []))
       .catch(() => {});
   }, []);
 
@@ -190,10 +186,7 @@ function WikipediaConnector() {
       if (!res.ok) throw new Error(data.detail || 'Failed');
       setWikiResult(data);
       setWikiState('done');
-      setIngested(prev => {
-        const next = [...new Set([...prev, ...data.titles])];
-        return next;
-      });
+      setIngested(prev => [...new Set([...prev, ...data.titles])]);
       setWikiQuery('');
     } catch (err) {
       setWikiResult({ error: err.message });
@@ -208,12 +201,26 @@ function WikipediaConnector() {
     <div style={{margin:'10px 0'}}>
       <div className="rail-h" style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
         <span>Wikipedia</span>
-        <span style={{fontSize:9, fontFamily:'var(--mono)', color:'var(--mint)'}}>
-          {ingested.length > 0 ? ingested.length + ' topics' : 'live'}
-        </span>
+        <div style={{display:'flex', alignItems:'center', gap:6}}>
+          {ingested.length > 0 && <span style={{fontSize:9, fontFamily:'var(--mono)', color:'var(--ink-4)'}}>{ingested.length} cached</span>}
+          <button onClick={() => setWikiLive(v => !v)} style={{
+            border:'none', cursor:'pointer', borderRadius:20,
+            background: wikiLive ? 'var(--accent)' : 'var(--surface-3)',
+            color: wikiLive ? '#fff' : 'var(--ink-4)',
+            fontSize:9, fontWeight:700, padding:'2px 7px', fontFamily:'var(--mono)',
+            transition:'all .15s'
+          }}>
+            {wikiLive ? 'LIVE' : 'OFF'}
+          </button>
+        </div>
       </div>
 
-      {/* Ingested topics — scrollable, capped at SHOW_LIMIT with expand */}
+      {wikiLive && (
+        <div style={{fontSize:10.5, color:'var(--accent)', fontFamily:'var(--mono)', padding:'4px 8px', background:'var(--accent-t)', borderRadius:'var(--r-sm)', marginBottom:6}}>
+          ● Live — Wikipedia fetched automatically on each query
+        </div>
+      )}
+
       {visibleTopics.map((t,i) => (
         <div className="src" key={i} style={{cursor:'default'}}>
           <div className="ic" style={{background:'oklch(0.5 0.08 200)', fontSize:9, fontWeight:700}}>W</div>
@@ -229,7 +236,6 @@ function WikipediaConnector() {
         </div>
       )}
 
-      {/* Search form */}
       <form onSubmit={connectWikipedia} style={{marginTop:8}}>
         <div style={{
           display:'flex', gap:5, background:'var(--surface-2)',
@@ -240,11 +246,8 @@ function WikipediaConnector() {
           <input
             value={wikiQuery}
             onChange={e => setWikiQuery(e.target.value)}
-            placeholder="Add topic..."
-            style={{
-              flex:1, border:'none', outline:'none', background:'transparent',
-              fontSize:12, color:'var(--ink)', fontFamily:'var(--sans)'
-            }}
+            placeholder="Cache a topic..."
+            style={{flex:1, border:'none', outline:'none', background:'transparent', fontSize:12, color:'var(--ink)', fontFamily:'var(--sans)'}}
             disabled={wikiState === 'loading'}
           />
           <button type="submit" disabled={wikiState === 'loading' || !wikiQuery.trim()} style={{
@@ -257,22 +260,9 @@ function WikipediaConnector() {
         </div>
       </form>
 
-      {/* Status messages */}
-      {wikiState === 'loading' && (
-        <div style={{fontSize:10.5, color:'var(--ink-3)', marginTop:5, fontFamily:'var(--mono)'}}>
-          Fetching from Wikipedia...
-        </div>
-      )}
-      {wikiState === 'done' && wikiResult && (
-        <div style={{fontSize:10.5, color:'var(--mint)', marginTop:5, fontFamily:'var(--mono)'}}>
-          ✓ {wikiResult.chunks_ingested} chunks added
-        </div>
-      )}
-      {wikiState === 'error' && wikiResult && (
-        <div style={{fontSize:10.5, color:'var(--rose)', marginTop:5}}>
-          {wikiResult.error}
-        </div>
-      )}
+      {wikiState === 'loading' && <div style={{fontSize:10.5, color:'var(--ink-3)', marginTop:5, fontFamily:'var(--mono)'}}>Fetching from Wikipedia...</div>}
+      {wikiState === 'done' && wikiResult && <div style={{fontSize:10.5, color:'var(--mint)', marginTop:5, fontFamily:'var(--mono)'}}>✓ {wikiResult.chunks_ingested} chunks cached</div>}
+      {wikiState === 'error' && wikiResult && <div style={{fontSize:10.5, color:'var(--rose)', marginTop:5}}>{wikiResult.error}</div>}
     </div>
   );
 }
@@ -296,45 +286,59 @@ function Citations({ text, onHot }) {
 
 /* ---------------- product view ---------------- */
 function Product() {
-  const [currentQuery, setCurrentQuery] = useState('');   // active question text
-  const [answerText,   setAnswerText]   = useState('');   // streamed answer so far
-  const [sources,      setSources]      = useState([]);
-  const [meta,         setMeta]         = useState(null); // {ground, latency, retrieved, kept}
-  const [streaming,    setStreaming]     = useState(false);
-  const [pipeSteps,    setPipeSteps]    = useState([]);   // steps received from server
-  const [errorMsg,     setErrorMsg]     = useState('');
-  const [hot,          setHot]          = useState(null);
-  const [input,        setInput]        = useState('');
-  const scrollRef = useRef(null);
-  const abortRef  = useRef(null);
+  const [messages,  setMessages]  = useState([]);
+  const [hot,       setHot]       = useState(null);
+  const [input,     setInput]     = useState('');
+  const [wikiLive,  setWikiLive]  = useState(false);
+  const scrollRef  = useRef(null);
+  const abortRef   = useRef(null);
+  const messagesRef = useRef([]);
 
-  const shown = !streaming && currentQuery;
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const latestAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  const isStreaming = latestAssistant?.isStreaming ?? false;
 
   async function ask(query) {
-    if (!query.trim()) return;
-    // cancel any in-flight request
+    if (!query.trim() || isStreaming) return;
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
-
-    setCurrentQuery(query);
-    setAnswerText('');
-    setSources([]);
-    setMeta(null);
-    setPipeSteps([]);
-    setErrorMsg('');
-    setStreaming(true);
-    setHot(null);
     setInput('');
+    setHot(null);
+
+    // Build history from completed pairs (last 3 turns = 6 messages)
+    const prev = messagesRef.current;
+    const historyPairs = [];
+    for (let i = 0; i + 1 < prev.length; i += 2) {
+      const u = prev[i], a = prev[i+1];
+      if (u?.role === 'user' && a?.role === 'assistant' && !a.isStreaming && a.text) {
+        historyPairs.push({ role: 'user', content: u.text }, { role: 'assistant', content: a.text });
+      }
+    }
+    const history = historyPairs.slice(-6);
+
+    const userMsg = { id: Date.now(), role: 'user', text: query };
+    const aid = Date.now() + 1;
+    const assistantMsg = { id: aid, role: 'assistant', text: '', sources: [], ground: null,
+      latency: null, retrieved: 0, kept: 0, pipeSteps: [], isStreaming: true, error: null };
+
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
 
     try {
       const res = await fetch(API_BASE + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, history, use_wikipedia: wikiLive }),
         signal: abortRef.current.signal,
       });
 
-      if (!res.ok) { setErrorMsg('Backend error: ' + res.status); setStreaming(false); return; }
+      if (!res.ok) {
+        setMessages(prev => prev.map(m => m.id === aid ? { ...m, isStreaming: false, error: 'Backend error: ' + res.status } : m));
+        return;
+      }
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
@@ -345,31 +349,31 @@ function Product() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete line
+        buffer = lines.pop();
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           let evt;
           try { evt = JSON.parse(line.slice(6)); } catch { continue; }
 
           if (evt.type === 'pipeline_step') {
-            setPipeSteps(ps => [...ps, { t: evt.name, d: evt.detail }]);
+            setMessages(prev => prev.map(m => m.id === aid
+              ? { ...m, pipeSteps: [...m.pipeSteps, { t: evt.name, d: evt.detail }] } : m));
           } else if (evt.type === 'token') {
-            setAnswerText(a => a + evt.text);
+            setMessages(prev => prev.map(m => m.id === aid ? { ...m, text: m.text + evt.text } : m));
           } else if (evt.type === 'done') {
-            setSources(evt.sources || []);
-            setMeta({ ground: evt.ground, latency: evt.latency, retrieved: evt.retrieved, kept: evt.kept });
-            setStreaming(false);
+            setMessages(prev => prev.map(m => m.id === aid
+              ? { ...m, isStreaming: false, sources: evt.sources || [], ground: evt.ground,
+                  latency: evt.latency, retrieved: evt.retrieved, kept: evt.kept } : m));
           } else if (evt.type === 'error') {
-            setErrorMsg(evt.message);
-            setStreaming(false);
+            setMessages(prev => prev.map(m => m.id === aid ? { ...m, isStreaming: false, error: evt.message } : m));
           }
         }
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        setErrorMsg('Could not reach the backend. Make sure docker-compose is running on port 8000.');
+        setMessages(prev => prev.map(m => m.id === aid
+          ? { ...m, isStreaming: false, error: 'Could not reach the backend. Make sure the server is running on port 8000.' } : m));
       }
-      setStreaming(false);
     }
   }
 
@@ -377,13 +381,6 @@ function Product() {
     e.preventDefault();
     if (input.trim()) ask(input.trim());
   }
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [answerText, currentQuery]);
-
-  const visibleParas = answerText.split('\n\n').filter(Boolean);
-  const generatingNow = streaming && pipeSteps.length > 0 && answerText === '';
 
   return (
     <div className="app">
@@ -398,8 +395,7 @@ function Product() {
           </div>
         ))}
 
-        {/* Wikipedia connector */}
-        <WikipediaConnector />
+        <WikipediaConnector wikiLive={wikiLive} setWikiLive={setWikiLive} />
 
         <div className="rail-h">Recent</div>
         {RECENT.map((r,i)=>(
@@ -408,15 +404,15 @@ function Product() {
         <div style={{marginTop:18, padding:'12px', background:'var(--surface-2)', borderRadius:'var(--r)'}}>
           <div style={{fontSize:11, fontWeight:700, color:'var(--ink-2)'}}>Index</div>
           <div style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)', marginTop:4}}>
-            {sources.length > 0 ? sources.length + ' sources retrieved' : 'sample docs loaded'}
+            {latestAssistant?.sources?.length > 0 ? latestAssistant.sources.length + ' sources retrieved' : 'sample docs loaded'}
           </div>
         </div>
       </div>
 
-      {/* CENTER */}
+      {/* CENTER — chat thread */}
       <div className="conv pane" style={{overflow:'hidden'}}>
         <div className="conv-scroll" ref={scrollRef}>
-          {!currentQuery && (
+          {messages.length === 0 && (
             <div className="empty fade-in">
               <h2>Ask Atlas anything about how we work.</h2>
               <p>Source-verified answers from your connected knowledge. Every claim is traced to a real document before you see it.</p>
@@ -427,90 +423,89 @@ function Product() {
               </div>
             </div>
           )}
-          {currentQuery && (
-            <>
-              <div className="msg user"><div className="bubble">{currentQuery}</div></div>
-              <div className="msg fade-in">
-                <div className="answer-head">
-                  <div className="brand-mark">A</div>
-                  <div className="nm">Atlas</div>
-                  <div className="status">
-                    {streaming
-                      ? <><span className="dot" style={{background:'var(--accent)'}}></span>{generatingNow ? ' retrieving…' : ' generating…'}</>
-                      : meta ? <>{meta.kept} sources · {meta.latency}</> : ''}
-                  </div>
+
+          {messages.map(msg => msg.role === 'user' ? (
+            <div className="msg user" key={msg.id}>
+              <div className="bubble">{msg.text}</div>
+            </div>
+          ) : (
+            <div className="msg fade-in" key={msg.id}>
+              <div className="answer-head">
+                <div className="brand-mark">A</div>
+                <div className="nm">Atlas</div>
+                <div className="status">
+                  {msg.isStreaming
+                    ? <><span className="dot" style={{background:'var(--accent)'}}></span>{msg.pipeSteps.length > 0 && msg.text === '' ? ' retrieving…' : ' generating…'}</>
+                    : msg.kept ? <>{msg.kept} sources · {msg.latency}</> : ''}
                 </div>
-                {errorMsg && (
-                  <div style={{color:'var(--rose)', fontSize:13, padding:'10px', background:'var(--rose-t)', borderRadius:'var(--r)', marginBottom:8}}>
-                    {errorMsg}
-                  </div>
-                )}
-                <div className="answer-body">
-                  {visibleParas.map((p,i)=>(
-                    <p key={i}><Citations text={p} onHot={setHot} /></p>
-                  ))}
-                  {streaming && <span style={{opacity:.4}}>▍</span>}
-                </div>
-                {shown && !errorMsg && (
-                  <div className="answer-actions fade-in">
-                    <button className="ico-btn" title="Helpful">👍</button>
-                    <button className="ico-btn" title="Not helpful">👎</button>
-                    <button className="ico-btn" title="Copy" onClick={()=>navigator.clipboard.writeText(answerText)}>⧉</button>
-                    {meta && <span style={{marginLeft:8, fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-4)'}}>source-verified {Math.round((meta.ground||0)*100)}%</span>}
-                  </div>
-                )}
               </div>
-            </>
-          )}
+              {msg.error && (
+                <div style={{color:'var(--rose)', fontSize:13, padding:'10px', background:'var(--rose-t)', borderRadius:'var(--r)', marginBottom:8}}>
+                  {msg.error}
+                </div>
+              )}
+              <div className="answer-body">
+                {msg.text.split('\n\n').filter(Boolean).map((p,i) => (
+                  <p key={i}><Citations text={p} onHot={setHot} /></p>
+                ))}
+                {msg.isStreaming && <span style={{opacity:.4}}>▍</span>}
+              </div>
+              {!msg.isStreaming && !msg.error && msg.text && (
+                <div className="answer-actions fade-in">
+                  <button className="ico-btn" title="Copy" onClick={()=>navigator.clipboard.writeText(msg.text)}>⧉</button>
+                  {msg.ground != null && <span style={{marginLeft:8, fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-4)'}}>source-verified {Math.round(msg.ground*100)}%</span>}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
+
         <form className="composer" onSubmit={submitFree}>
           <div className="composer-inner">
             <span style={{color:'var(--ink-4)', fontSize:16}}>⌕</span>
-            <input value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask anything, or try a suggestion above…" />
-            <button className="send" type="submit" disabled={streaming}>↑</button>
+            <input value={input} onChange={e=>setInput(e.target.value)}
+              placeholder={messages.length === 0 ? 'Ask anything, or try a suggestion above…' : 'Ask a follow-up…'} />
+            <button className="send" type="submit" disabled={isStreaming}>↑</button>
           </div>
         </form>
       </div>
 
-      {/* RIGHT inspector */}
+      {/* RIGHT inspector — always shows latest answer trace */}
       <div className="insp pane">
         <div className="insp-h">
           <div className="t">Retrieval</div>
-          {currentQuery && <span className="chip accent">{streaming ? 'live' : 'trace'}</span>}
+          {latestAssistant && <span className="chip accent">{latestAssistant.isStreaming ? 'live' : 'trace'}</span>}
         </div>
         <div className="insp-sub">How this answer was built — the part interviewers actually want to see.</div>
 
-        {!currentQuery && <div style={{color:'var(--ink-4)', fontSize:12.5, marginTop:30, textAlign:'center', lineHeight:1.5}}>Ask a question to see the live retrieval &amp; source verification trace.</div>}
+        {!latestAssistant && <div style={{color:'var(--ink-4)', fontSize:12.5, marginTop:30, textAlign:'center', lineHeight:1.5}}>Ask a question to see the live retrieval &amp; source verification trace.</div>}
 
-        {currentQuery && (
+        {latestAssistant && (
           <>
-            {/* pipeline steps */}
             <div style={{marginBottom:18}}>
-              {(streaming ? pipeSteps : (pipeSteps.length ? pipeSteps : PIPE)).map((p,i)=>(
+              {(latestAssistant.isStreaming ? latestAssistant.pipeSteps : (latestAssistant.pipeSteps.length ? latestAssistant.pipeSteps : PIPE)).map((p,i)=>(
                 <div className="pipe-step" key={i}>
-                  <div className={'pipe-dot' + (!streaming ? ' done' : i < pipeSteps.length ? ' done' : '')}>
-                    {(!streaming || i < pipeSteps.length) && <span style={{color:'#fff', fontSize:10}}>✓</span>}
+                  <div className={'pipe-dot' + (!latestAssistant.isStreaming ? ' done' : i < latestAssistant.pipeSteps.length ? ' done' : '')}>
+                    {(!latestAssistant.isStreaming || i < latestAssistant.pipeSteps.length) && <span style={{color:'#fff', fontSize:10}}>✓</span>}
                   </div>
                   <div><div className="pt">{p.t}</div><div className="pd">{p.d}</div></div>
                 </div>
               ))}
             </div>
 
-            {!streaming && meta && (
+            {!latestAssistant.isStreaming && latestAssistant.ground != null && (
               <div className="fade-in">
-                {/* source verification */}
                 <div className="ground">
-                  <div className="gt"><span>Source Verified</span><span>{Math.round((meta.ground||0)*100)}%</span></div>
-                  <div className="bar"><i style={{width:((meta.ground||0)*100)+'%'}}></i></div>
+                  <div className="gt"><span>Source Verified</span><span>{Math.round(latestAssistant.ground*100)}%</span></div>
+                  <div className="bar"><i style={{width:(latestAssistant.ground*100)+'%'}}></i></div>
                   <div className="gn">Every claim is traced to a real document. Below 75% Atlas tells you it cannot find a reliable answer rather than guess.</div>
                 </div>
 
-                {/* sources */}
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', margin:'2px 0 10px'}}>
                   <div style={{fontWeight:700, fontSize:12.5}}>Sources used</div>
-                  <span style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)'}}>{meta.retrieved} retrieved → {meta.kept} kept</span>
+                  <span style={{fontFamily:'var(--mono)', fontSize:10.5, color:'var(--ink-3)'}}>{latestAssistant.retrieved} retrieved → {latestAssistant.kept} kept</span>
                 </div>
-                {sources.map(s=>(
+                {latestAssistant.sources.map(s=>(
                   <div className={'chunk'+(hot===s.id?' hot':'')} key={s.id}
                        onMouseEnter={()=>setHot(s.id)} onMouseLeave={()=>setHot(null)}>
                     <div className="chunk-h">
@@ -518,9 +513,7 @@ function Product() {
                       <div><div className="ti">{s.title}</div></div>
                     </div>
                     <div className="chunk-x">{s.snippet}</div>
-                    <div className="chunk-meta">
-                      <span className="chip">{s.space}</span>
-                    </div>
+                    <div className="chunk-meta"><span className="chip">{s.space}</span></div>
                   </div>
                 ))}
               </div>

@@ -1,3 +1,4 @@
+import asyncio
 import time
 import json
 from typing import AsyncGenerator
@@ -5,27 +6,26 @@ from typing import AsyncGenerator
 from langchain_qdrant import QdrantVectorStore
 from langchain_community.retrievers import BM25Retriever
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage, AIMessage
 from sentence_transformers import CrossEncoder
 from qdrant_client import QdrantClient
 
 from app.services.embeddings import get_embeddings
 from app.core.config import get_settings
 
-ANSWER_PROMPT = ChatPromptTemplate.from_template(
-    """You are Atlas, an enterprise knowledge assistant. Answer using ONLY the context below.
+ANSWER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """You are Atlas, an enterprise knowledge assistant. Answer using ONLY the context below.
 Cite sources as [1], [2], etc. Use **bold** for key terms.
 If the context does not contain enough information, say exactly: "I couldn't find a reliable answer in your documents. I'd rather tell you that than guess."
 
 Context:
-{context}
-
-Question: {question}
-
-Answer:"""
-)
+{context}"""),
+    MessagesPlaceholder(variable_name="history", optional=True),
+    ("human", "{question}"),
+])
 
 GROUND_PROMPT = ChatPromptTemplate.from_template(
     """Rate how well this answer is source-verified — meaning every claim can be traced to the provided context.
@@ -122,13 +122,38 @@ def _hybrid_retrieve_and_rerank(
     return [doc for _, doc in ranked[:top_k]]
 
 
-async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
+async def _fetch_wikipedia_live(query: str) -> str:
+    """Fetch a Wikipedia article and return the full text for direct prompt injection."""
+    import wikipedia as wiki_pkg
+
+    def _sync_fetch() -> str:
+        try:
+            page = wiki_pkg.page(query, auto_suggest=True)
+            return f"[Wikipedia: {page.title}]\n{page.content[:15000]}"
+        except wiki_pkg.DisambiguationError as e:
+            try:
+                page = wiki_pkg.page(e.options[0], auto_suggest=False)
+                return f"[Wikipedia: {page.title}]\n{page.content[:15000]}"
+            except Exception:
+                return ""
+        except Exception:
+            return ""
+
+    return await asyncio.to_thread(_sync_fetch)
+
+
+async def run_rag_stream(
+    query: str,
+    history: list[dict] | None = None,
+    use_wikipedia: bool = False,
+) -> AsyncGenerator[str, None]:
     """
     Full RAG pipeline as an SSE stream.
     Events: pipeline_step | token | done | error
     """
     settings = get_settings()
     start = time.time()
+    history = history or []
 
     def sse(data: dict) -> str:
         return f"data: {json.dumps(data)}\n\n"
@@ -139,31 +164,46 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
                    "detail": "fetching chunks for BM25"})
         all_docs = _fetch_all_docs()
 
-        if not all_docs:
+        # ── Step 2: live Wikipedia fetch (no chunking) ───────────────────
+        wiki_context = ""
+        if use_wikipedia:
+            yield sse({"type": "pipeline_step", "name": "Wikipedia (live)",
+                       "detail": "fetching article → injecting full text"})
+            wiki_context = await _fetch_wikipedia_live(query)
+
+        if not all_docs and not wiki_context:
             yield sse({"type": "error",
                        "message": "No documents ingested yet. "
                                   "Please ingest documents first via POST /api/ingest."})
             return
 
-        # ── Step 2: hybrid retrieval ─────────────────────────────────────
-        yield sse({"type": "pipeline_step", "name": "Hybrid search",
-                   "detail": f"BM25 + dense over {len(all_docs)} chunks"})
+        # ── Step 3: hybrid retrieval + rerank (Qdrant docs) ─────────────
+        retrieved_docs: list[Document] = []
+        if all_docs:
+            yield sse({"type": "pipeline_step", "name": "Hybrid search",
+                       "detail": f"BM25 + dense over {len(all_docs)} chunks"})
+            yield sse({"type": "pipeline_step", "name": "Reranker",
+                       "detail": "cross-encoder/ms-marco · keep top 4"})
+            retrieved_docs = _hybrid_retrieve_and_rerank(query, all_docs, top_k=4)
 
-        # ── Step 3: cross-encoder rerank ─────────────────────────────────
-        yield sse({"type": "pipeline_step", "name": "Reranker",
-                   "detail": "cross-encoder/ms-marco · keep top 4"})
-
-        retrieved_docs = _hybrid_retrieve_and_rerank(query, all_docs, top_k=4)
-        if not retrieved_docs:
-            yield sse({"type": "error", "message": "No relevant documents found."})
-            return
-
-        # ── Step 4: prompt assembly ──────────────────────────────────────
+        # ── Step 4: assemble context ─────────────────────────────────────
         yield sse({"type": "pipeline_step", "name": "Prompt assembly",
-                   "detail": f"{len(retrieved_docs)} chunks injected"})
-        context_str = _format_docs(retrieved_docs)
+                   "detail": f"{'Wikipedia + ' if wiki_context else ''}{len(retrieved_docs)} chunks injected"})
 
-        # ── Step 5: LLM generation (streamed) ───────────────────────────
+        qdrant_context = _format_docs(retrieved_docs) if retrieved_docs else ""
+        context_str = (wiki_context + ("\n\n" if qdrant_context else "") + qdrant_context).strip()
+
+        # ── Step 5: build conversation history ───────────────────────────
+        history_messages = []
+        for msg in history[-6:]:  # last 3 turns (6 messages)
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "user":
+                history_messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                history_messages.append(AIMessage(content=content))
+
+        # ── Step 6: LLM generation (streamed) ───────────────────────────
         yield sse({"type": "pipeline_step", "name": "Generating answer",
                    "detail": "Groq · Llama 4 Scout"})
 
@@ -175,11 +215,15 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
         )
         chain = ANSWER_PROMPT | llm | StrOutputParser()
         full_answer = ""
-        async for token in chain.astream({"context": context_str, "question": query}):
+        async for token in chain.astream({
+            "context": context_str,
+            "question": query,
+            "history": history_messages,
+        }):
             full_answer += token
             yield sse({"type": "token", "text": token})
 
-        # ── Step 6: source verification ──────────────────────────────────
+        # ── Step 7: source verification ──────────────────────────────────
         yield sse({"type": "pipeline_step", "name": "Source Verification",
                    "detail": "Gemini 2.5 Flash judge"})
 
@@ -216,9 +260,18 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
             ground_score = 0.85
 
         # ── Build sources list ───────────────────────────────────────────
-        sources = [
+        sources = []
+        if wiki_context:
+            sources.append({
+                "id": 1,
+                "title": query.title(),
+                "snippet": wiki_context[wiki_context.find("\n")+1:][:220] + "…",
+                "space": "Wikipedia (live)",
+            })
+        offset = len(sources)
+        sources += [
             {
-                "id": i + 1,
+                "id": i + 1 + offset,
                 "title": (doc.metadata or {}).get("source", f"Document {i+1}"),
                 "snippet": doc.page_content[:220] + "…",
                 "space": (doc.metadata or {}).get("space", "Knowledge Base"),
@@ -232,7 +285,7 @@ async def run_rag_stream(query: str) -> AsyncGenerator[str, None]:
             "ground": ground_score,
             "latency": f"{round(time.time() - start, 1)}s",
             "retrieved": len(all_docs),
-            "kept": len(retrieved_docs),
+            "kept": len(retrieved_docs) + (1 if wiki_context else 0),
         })
 
     except Exception as e:

@@ -9,7 +9,11 @@ router = APIRouter()
 @router.post("/chat")
 async def chat(request: ChatRequest):
     return StreamingResponse(
-        run_rag_stream(request.query),
+        run_rag_stream(
+            query=request.query,
+            history=[m.model_dump() for m in request.history],
+            use_wikipedia=request.use_wikipedia,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
