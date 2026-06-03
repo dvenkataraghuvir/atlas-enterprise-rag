@@ -122,6 +122,41 @@ def _hybrid_retrieve_and_rerank(
     return [doc for _, doc in ranked[:top_k]]
 
 
+async def _rewrite_query(query: str, history: list[dict]) -> str:
+    """Rewrite a follow-up question into a self-contained search query using conversation history."""
+    settings = get_settings()
+    if not settings.nvidia_api_key:
+        return query
+
+    recent = history[-4:]  # last 2 turns is enough context
+    convo = "\n".join(
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:200]}"
+        for m in recent
+    )
+    prompt = (
+        f"Conversation so far:\n{convo}\n\n"
+        f"Follow-up question: {query}\n\n"
+        f"Rewrite the follow-up as a standalone search query that makes sense without the conversation. "
+        f"Output ONLY the rewritten query, nothing else."
+    )
+
+    try:
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage
+        rewriter = ChatOpenAI(
+            model="meta/llama-3.2-3b-instruct",
+            api_key=settings.nvidia_api_key,
+            base_url="https://integrate.api.nvidia.com/v1",
+            temperature=0,
+            max_tokens=80,
+        )
+        response = await rewriter.ainvoke([HumanMessage(content=prompt)])
+        rewritten = response.content.strip().strip('"\'')
+        return rewritten if rewritten else query
+    except Exception:
+        return query
+
+
 async def _fetch_wikipedia_live(query: str) -> str:
     """Fetch a Wikipedia article and return the full text for direct prompt injection."""
     import wikipedia as wiki_pkg
@@ -169,12 +204,19 @@ async def run_rag_stream(
                    "detail": "fetching chunks for BM25"})
         all_docs = _fetch_all_docs()
 
-        # ── Step 2: live Wikipedia fetch (no chunking) ───────────────────
+        # ── Step 2: query rewriting for follow-up questions ─────────────
+        search_query = query
+        if history:
+            yield sse({"type": "pipeline_step", "name": "Query rewriting",
+                       "detail": "NIM llama-3.2-3b · resolving references"})
+            search_query = await _rewrite_query(query, history)
+
+        # ── Step 3: live Wikipedia fetch (no chunking) ───────────────────
         wiki_context = ""
         if use_wikipedia:
             yield sse({"type": "pipeline_step", "name": "Wikipedia (live)",
                        "detail": "fetching article → injecting full text"})
-            wiki_context = await _fetch_wikipedia_live(query)
+            wiki_context = await _fetch_wikipedia_live(search_query)
 
         if not all_docs and not wiki_context:
             yield sse({"type": "error",
@@ -182,23 +224,23 @@ async def run_rag_stream(
                                   "Please ingest documents first via POST /api/ingest."})
             return
 
-        # ── Step 3: hybrid retrieval + rerank (Qdrant docs) ─────────────
+        # ── Step 4: hybrid retrieval + rerank (Qdrant docs) ─────────────
         retrieved_docs: list[Document] = []
         if all_docs:
             yield sse({"type": "pipeline_step", "name": "Hybrid search",
                        "detail": f"BM25 + dense over {len(all_docs)} chunks"})
             yield sse({"type": "pipeline_step", "name": "Reranker",
                        "detail": "cross-encoder/ms-marco · keep top 4"})
-            retrieved_docs = _hybrid_retrieve_and_rerank(query, all_docs, top_k=4)
+            retrieved_docs = _hybrid_retrieve_and_rerank(search_query, all_docs, top_k=4)
 
-        # ── Step 4: assemble context ─────────────────────────────────────
+        # ── Step 5: assemble context ─────────────────────────────────────
         yield sse({"type": "pipeline_step", "name": "Prompt assembly",
                    "detail": f"{'Wikipedia + ' if wiki_context else ''}{len(retrieved_docs)} chunks injected"})
 
         qdrant_context = _format_docs(retrieved_docs) if retrieved_docs else ""
         context_str = (wiki_context + ("\n\n" if qdrant_context else "") + qdrant_context).strip()
 
-        # ── Step 5: build conversation history ───────────────────────────
+        # ── Step 6: build conversation history ───────────────────────────
         history_messages = []
         for msg in history[-6:]:  # last 3 turns (6 messages)
             role = msg.get("role", "")
@@ -208,7 +250,7 @@ async def run_rag_stream(
             elif role == "assistant":
                 history_messages.append(AIMessage(content=content))
 
-        # ── Step 6: LLM generation (streamed) ───────────────────────────
+        # ── Step 7: LLM generation (streamed) ───────────────────────────
         yield sse({"type": "pipeline_step", "name": "Generating answer",
                    "detail": "Groq · Llama 4 Scout"})
 
@@ -228,7 +270,7 @@ async def run_rag_stream(
             full_answer += token
             yield sse({"type": "token", "text": token})
 
-        # ── Step 7: source verification ──────────────────────────────────
+        # ── Step 8: source verification ──────────────────────────────────
         yield sse({"type": "pipeline_step", "name": "Source Verification",
                    "detail": "Gemini 2.5 Flash judge"})
 
