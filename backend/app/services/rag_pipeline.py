@@ -134,10 +134,13 @@ async def _rewrite_query(query: str, history: list[dict]) -> str:
         for m in recent
     )
     prompt = (
-        f"Conversation so far:\n{convo}\n\n"
-        f"Follow-up question: {query}\n\n"
-        f"Rewrite the follow-up as a standalone search query that makes sense without the conversation. "
-        f"Output ONLY the rewritten query, nothing else."
+        f"Conversation:\n{convo}\n\n"
+        f"Follow-up: {query}\n\n"
+        f"Replace every pronoun (his, her, its, he, she, they, it) and vague reference "
+        f"(the actor, the movie, the person, this, that) with the specific name or topic from the conversation.\n"
+        f"Example: conversation about Arijit Singh + follow-up 'what is his age' → 'Arijit Singh age'\n"
+        f"Output ONLY the rewritten search query. No explanation, no punctuation at the end.\n"
+        f"Rewritten query:"
     )
 
     try:
